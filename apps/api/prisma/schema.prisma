@@ -33,10 +33,12 @@ model User {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  // Realtionships
-  orgMembers  OrgMember[]
-  projects    Project[]
-  invitations Invitation[]
+  // Relations
+  orgMembers    OrgMember[]
+  projects      Project[]
+  invitations   Invitation[]
+  assignedTasks Task[]       @relation("TaskAssignee")
+  reportedTasks Task[]       @relation("TaskReporter")
 
   @@map("users")
 }
@@ -59,7 +61,7 @@ model Organisation {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Realtionships
+  // Relations
   orgMembers  OrgMember[]
   projects    Project[]
   invitations Invitation[]
@@ -85,7 +87,7 @@ enum Role {
 
 model OrgMember {
   id       String   @id @default(cuid())
-  role     Role     @default(OWNER)
+  role     Role
   joinedAt DateTime @default(now()) @map("joined_at")
 
   // Foreign Keys
@@ -115,14 +117,14 @@ model OrgMember {
 
 model Project {
   id          String   @id @default(cuid())
-  taskCounter Int      @default(autoincrement()) @map("task_counter")
+  taskCounter Int      @default(0) @map("task_counter")
   name        String   @db.VarChar(255)
   key         String   @db.VarChar(5)
   description String?
   icon        String?
   isArchived  Boolean  @default(false) @map("is_archived")
   createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("update_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Foreign Keys
   organisationId String  @map("organisation_id")
@@ -131,8 +133,11 @@ model Project {
   // Relationships
   organisation Organisation @relation(fields: [organisationId], references: [id])
   lead         User?        @relation(fields: [leadId], references: [id])
-  statuses     Status[]
-  labels       Label[]
+
+  // Relations
+  statuses Status[]
+  labels   Label[]
+  tasks    Task[]
 
   // COnstraints
   @@unique([organisationId, key])
@@ -149,6 +154,8 @@ model Project {
  */
 
 model Invitation {
+  id         String    @id @default(cuid())
+  email      String    @db.VarChar(255)
   role       Role // Role will be defined invitee
   token      String    @unique
   createdAt  DateTime  @default(now()) @map("created_at")
@@ -175,21 +182,25 @@ model Invitation {
  * |========================================================================================================================|
  */
 
-model Status ?{
-id    String @id @default(cuid())
-name  String @db.VarChar(255)
-color String @db.VarChar(20)
-order Int // For  | symbolordering status: PropertyName as string
+model Status {
+  id    String @id @default(cuid())
+  name  String @db.VarChar(255)
+  color String @db.VarChar(20)
+  order Int // For ordering status
 
-// Foreign Keys
-projectId String @map("project_id")
+  // Foreign Keys
+  projectId String @map("project_id")
 
-// Relationships
-project Project @relation(fields: [projectId], references: [id])
+  // Relationships
+  project Project @relation(fields: [projectId], references: [id])
 
-// constraints
-@@unique([projectId, name])
-@@map("statuses")
+  // Relations
+  tasks Task[]
+
+  // constraints
+  @@unique([projectId, name])
+  @@unique([order, projectId])
+  @@map("statuses")
 }
 
 /**
@@ -210,9 +221,88 @@ model Label {
   projectId String @map("project_id")
 
   // Relationships
-  project Project @relation(fields: [projectId], references: [id])
+  project    Project     @relation(fields: [projectId], references: [id])
+  taskLabels TaskLabel[]
 
   // constraints
   @@unique([projectId, name])
   @@map("labels")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Task Table                                                                 |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+enum Priority {
+  URGENT
+  HIGHT
+  MEDIUM
+  LOW
+  NONE
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  title          String    @db.VarChar(255)
+  description    Json?
+  priority       Priority
+  taskNumber     Int       @map("task_number")
+  dueDate        DateTime? @map("due_date")
+  estimatedHours Float?    @map("estimated_hours")
+  order          Int // Ordering within status
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Foreign Keys
+  projectId    String  @map("project_id")
+  statusId     String  @map("status_id")
+  assigneeId   String? @map("assignee_id")
+  reporterId   String  @map("reporter_id")
+  parentTaskId String? @map("parent_task_id")
+
+  // Relationships
+  project    Project @relation(fields: [projectId], references: [id])
+  status     Status  @relation(fields: [statusId], references: [id])
+  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  reporter   User    @relation("TaskReporter", fields: [reporterId], references: [id])
+  ParentTask Task?   @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+
+  // Relations
+  tasks      Task[]      @relation("TaskHierarchy")
+  taskLabels TaskLabel[]
+
+  // constraints
+  @@index([projectId])
+  @@index([reporterId])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             TaskLabel Table (junction table)                                           |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model TaskLabel {
+  // Foreign
+  taskId  String @map("task_id")
+  labelId String @map("label_id")
+
+  // Relationships
+  task  Task  @relation(fields: [taskId], references: [id])
+  label Label @relation(fields: [labelId], references: [id])
+
+  // constraints
+  @@id([taskId, labelId])
+  @@map("task_labels")
 }
