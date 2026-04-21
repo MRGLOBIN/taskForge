@@ -37,10 +37,14 @@ model User {
   orgMembers    OrgMember[]
   projects      Project[]
   invitations   Invitation[]
-  assignedTasks Task[]       @relation("TaskAssignee")
-  reportedTasks Task[]       @relation("TaskReporter")
+  assignedTasks Task[]         @relation("TaskAssignee")
+  reportedTasks Task[]         @relation("TaskReporter")
   comments      Comment[]
   activities    Activity[]
+  notifications Notification[]
+  attachments   Attachment[]
+  refreshTokens RefreshToken[]
+  savedFilters  SavedFilter[]
 
   @@map("users")
 }
@@ -137,9 +141,10 @@ model Project {
   lead         User?        @relation(fields: [leadId], references: [id])
 
   // Relations
-  statuses Status[]
-  labels   Label[]
-  tasks    Task[]
+  statuses     Status[]
+  labels       Label[]
+  tasks        Task[]
+  savedFilters SavedFilter[]
 
   // COnstraints
   @@unique([organisationId, key])
@@ -240,7 +245,7 @@ model Label {
  * |========================================================================================================================|
  */
 
-enum Priority {
+enum TASKPriority {
   URGENT
   HIGHT
   MEDIUM
@@ -249,17 +254,17 @@ enum Priority {
 }
 
 model Task {
-  id             String    @id @default(cuid())
-  title          String    @db.VarChar(255)
+  id             String       @id @default(cuid())
+  title          String       @db.VarChar(255)
   description    Json?
-  priority       Priority
-  taskNumber     Int       @map("task_number")
-  dueDate        DateTime? @map("due_date")
-  estimatedHours Float?    @map("estimated_hours")
+  priority       TASKPriority
+  taskNumber     Int          @map("task_number")
+  dueDate        DateTime?    @map("due_date")
+  estimatedHours Float?       @map("estimated_hours")
   order          Int // Ordering within status
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  deletedAt      DateTime?    @map("deleted_at")
 
   // Foreign Keys
   projectId    String  @map("project_id")
@@ -276,14 +281,15 @@ model Task {
   ParentTask Task?   @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
 
   // Relations
-  tasks      Task[]      @relation("TaskHierarchy")
-  taskLabels TaskLabel[]
-  comments   Comment[]
-  activities Activity[]
+  tasks       Task[]       @relation("TaskHierarchy")
+  taskLabels  TaskLabel[]
+  comments    Comment[]
+  activities  Activity[]
+  attachments Attachment[]
 
   // constraints
   @@index([projectId])
-  @@index([assigneeId])
+  @@index([assigneeId, statusId])
   @@index([dueDate])
   @@map("tasks")
 }
@@ -347,22 +353,33 @@ model Comment {
  * |========================================================================================================================|
  */
 
-enum Action {
+enum ActivityAction {
+  // CRUD Actions
   CREATED
+  DELETED
+  UPDATED
+
+  // Changes
   STATUS_CHANGED
-  ASSIGNED
   PRIORITY_CHANGED
+  ASSIGNED
+  UNASSIGNED
+
+  // writes
   COMMENTED
-  ATTACHMENT_ADDED
+  ATTACHEMNT_ADDED
+
+  // misc
+  MOVED
   OTHER
 }
 
 model Activity {
-  id         String   @id @default(cuid())
-  action     Action
-  oldValue   String?  @map("old_value")
-  newValue   String?  @map("new_value")
-  created_at DateTime @default(now())
+  id         String         @id @default(cuid())
+  action     ActivityAction
+  oldValue   String?        @map("old_value")
+  newValue   String?        @map("new_value")
+  created_at DateTime       @default(now())
 
   // Foreign Keys
   taskId  String @map("task_id")
@@ -373,7 +390,7 @@ model Activity {
   actor User @relation(fields: [actorId], references: [id])
 
   // constraints
-  @@index([taskId])
+  @@index([taskId, created_at])
   @@map("activities")
 }
 
@@ -386,6 +403,63 @@ model Activity {
  * |========================================================================================================================|
  */
 
+// TODO: Complete this type later
+enum NotificationType {
+  // Task Action
+  TASK_ASSIGNED
+  TASK_UNASSIGNED
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_DELTED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+
+  // Comment Action
+  COMMENT_ADDED
+  MENTIONED_IN_COMMENT
+  REPLY_TO_COMMENT
+
+  // Project Action
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+  ROLE_CHANGED
+
+  // Attachment Action
+  ATTACHMENT_ADDED
+  ATTACHMENT_REMOVED
+
+  // Invitation
+  INVITATION_RECIEVED
+  INVITATION_ACCEPTED
+
+  // User Action
+  PASSWORD_CHANGED
+
+  // Misc
+  OTHER
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String           @db.VarChar(50)
+  message   String
+  link      String
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @map("created_at")
+
+  // Foreign Keys
+  userId String @map("user_id")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
 /**
  * |========================================================================================================================|
  * |========================================================================================================================|
@@ -394,6 +468,26 @@ model Activity {
  * |========================================================================================================================|
  * |========================================================================================================================|
  */
+
+model Attachment {
+  id        String   @id @default(cuid())
+  fileName  String   @map("file_name") @db.VarChar(80)
+  url       String
+  fileSize  Int      @map("file_size")
+  mimeType  String   @map("mime_type") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Foreign Keys
+  taskId     String @map("task_id")
+  uploaderId String @map("uploader_id")
+
+  // Relationships
+  task     Task @relation(fields: [taskId], references: [id])
+  uploader User @relation(fields: [uploaderId], references: [id])
+
+  @@index([taskId])
+  @@map("attachments")
+}
 
 /**
  * |========================================================================================================================|
@@ -404,6 +498,23 @@ model Activity {
  * |========================================================================================================================|
  */
 
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  // Foreign Keys
+  userId String @map("user_id")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("refresh_Token")
+}
+
 /**
  * |========================================================================================================================|
  * |========================================================================================================================|
@@ -412,3 +523,20 @@ model Activity {
  * |========================================================================================================================|
  * |========================================================================================================================|
  */
+
+model SavedFilter {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(50)
+  filters   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Foreign Keys
+  projectId String @map("project_id")
+  createdBy String @map("created_by")
+
+  // Relationships
+  proejct Project @relation(fields: [projectId], references: [id])
+  creator User    @relation(fields: [createdBy], references: [id])
+
+  @@map("save_filter")
+}
