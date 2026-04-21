@@ -40,6 +40,7 @@ model User {
   assignedTasks Task[]       @relation("TaskAssignee")
   reportedTasks Task[]       @relation("TaskReporter")
   comments      Comment[]
+  activities    Activity[]
 
   @@map("users")
 }
@@ -278,6 +279,7 @@ model Task {
   tasks      Task[]      @relation("TaskHierarchy")
   taskLabels TaskLabel[]
   comments   Comment[]
+  activities Activity[]
 
   // constraints
   @@index([projectId])
@@ -344,6 +346,36 @@ model Comment {
  * |========================================================================================================================|
  * |========================================================================================================================|
  */
+
+enum Action {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  PRIORITY_CHANGED
+  COMMENTED
+  ATTACHMENT_ADDED
+  OTHER
+}
+
+model Activity {
+  id         String   @id @default(cuid())
+  action     Action
+  oldValue   String?  @map("old_value")
+  newValue   String?  @map("new_value")
+  created_at DateTime @default(now())
+
+  // Foreign Keys
+  taskId  String @map("task_id")
+  actorId String @map("actor_id")
+
+  // Relationships
+  task  Task @relation(fields: [taskId], references: [id])
+  actor User @relation(fields: [actorId], references: [id])
+
+  // constraints
+  @@index([taskId])
+  @@map("activities")
+}
 
 /**
  * |========================================================================================================================|
