@@ -37,14 +37,14 @@ model User {
   orgMembers    OrgMember[]
   projects      Project[]
   invitations   Invitation[]
-  assignedTasks Task[]         @relation("TaskAssignee")
-  reportedTasks Task[]         @relation("TaskReporter")
-  comments      Comment[]
-  activities    Activity[]
-  notifications Notification[]
-  attachments   Attachment[]
-  refreshTokens RefreshToken[]
-  savedFilters  SavedFilter[]
+  assignedTasks Task[]         @relation("taskAssignee")
+  reportedTasks Task[]         @relation("taskReporter")
+  comments      Comment[]      @relation("commentAuthor")
+  activities    Activity[]     @relation("activityAuthor")
+  notifications Notification[] @relation("notificatonRecipient")
+  attachments   Attachment[]   @relation("attachmentUploader")
+  refreshTokens RefreshToken[] @relation("refreshToken")
+  savedFilters  SavedFilter[]  @relation("filterCreator")
 
   @@map("users")
 }
@@ -143,8 +143,8 @@ model Project {
   // Relations
   statuses     Status[]
   labels       Label[]
-  tasks        Task[]
-  savedFilters SavedFilter[]
+  tasks        Task[]        @relation("taskProject")
+  savedFilters SavedFilter[] @relation("filter")
 
   // COnstraints
   @@unique([organisationId, key])
@@ -202,7 +202,7 @@ model Status {
   project Project @relation(fields: [projectId], references: [id])
 
   // Relations
-  tasks Task[]
+  tasks Task[] @relation("taskStatus")
 
   // constraints
   @@unique([projectId, name])
@@ -229,7 +229,7 @@ model Label {
 
   // Relationships
   project    Project     @relation(fields: [projectId], references: [id])
-  taskLabels TaskLabel[]
+  taskLabels TaskLabel[] @relation("labelToTask")
 
   // constraints
   @@unique([projectId, name])
@@ -274,18 +274,18 @@ model Task {
   parentTaskId String? @map("parent_task_id")
 
   // Relationships
-  project    Project @relation(fields: [projectId], references: [id])
-  status     Status  @relation(fields: [statusId], references: [id])
-  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  reporter   User    @relation("TaskReporter", fields: [reporterId], references: [id])
-  parentTask Task?   @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  project    Project @relation("taskProject", fields: [projectId], references: [id])
+  status     Status  @relation("taskStatus", fields: [statusId], references: [id])
+  assignee   User?   @relation("taskAssignee", fields: [assigneeId], references: [id])
+  reporter   User    @relation("taskReporter", fields: [reporterId], references: [id])
+  parentTask Task?   @relation("taskHierarchy", fields: [parentTaskId], references: [id])
 
   // Relations
-  tasks       Task[]       @relation("TaskHierarchy")
-  taskLabels  TaskLabel[]
-  comments    Comment[]
-  activities  Activity[]
-  attachments Attachment[]
+  tasks        Task[]       @relation("taskHierarchy")
+  taskLabels   TaskLabel[]  @relation("taskToLabel")
+  comments     Comment[]
+  attachments  Attachment[]
+  activityTask Activity[]   @relation("activityTask")
 
   // constraints
   @@index([projectId])
@@ -309,8 +309,8 @@ model TaskLabel {
   labelId String @map("label_id")
 
   // Relationships
-  task  Task  @relation(fields: [taskId], references: [id])
-  label Label @relation(fields: [labelId], references: [id])
+  task  Task  @relation("taskToLabel", fields: [taskId], references: [id])
+  label Label @relation("labelToTask", fields: [labelId], references: [id])
 
   // constraints
   @@id([taskId, labelId])
@@ -338,7 +338,7 @@ model Comment {
 
   // Relationships
   task   Task @relation(fields: [taskId], references: [id])
-  author User @relation(fields: [authorId], references: [id])
+  author User @relation("commentAuthor", fields: [authorId], references: [id])
 
   @@index([taskId])
   @@map("comments")
@@ -386,8 +386,8 @@ model Activity {
   actorId String @map("actor_id")
 
   // Relationships
-  task  Task @relation(fields: [taskId], references: [id])
-  actor User @relation(fields: [actorId], references: [id])
+  task  Task @relation("activityTask", fields: [taskId], references: [id])
+  actor User @relation("activityAuthor", fields: [actorId], references: [id])
 
   // constraints
   @@index([taskId, createdAt])
@@ -456,7 +456,7 @@ model Notification {
   userId String @map("user_id")
 
   // Relationships
-  user User @relation(fields: [userId], references: [id])
+  user User @relation("notificatonRecipient", fields: [userId], references: [id])
 
   @@index([userId, isRead, createdAt])
   @@map("notifications")
@@ -485,7 +485,7 @@ model Attachment {
 
   // Relationships
   task     Task @relation(fields: [taskId], references: [id])
-  uploader User @relation(fields: [uploaderId], references: [id])
+  uploader User @relation("attachmentUploader", fields: [uploaderId], references: [id])
 
   @@index([taskId])
   @@map("attachments")
@@ -511,7 +511,7 @@ model RefreshToken {
   userId String @map("user_id")
 
   // Relationships
-  user User @relation(fields: [userId], references: [id])
+  user User @relation("refreshToken", fields: [userId], references: [id])
 
   @@index([userId])
   @@map("refresh_token")
@@ -537,8 +537,8 @@ model SavedFilter {
   createdBy String @map("created_by")
 
   // Relationships
-  project Project @relation(fields: [projectId], references: [id])
-  creator User    @relation(fields: [createdBy], references: [id])
+  project Project @relation("filter", fields: [projectId], references: [id])
+  creator User    @relation("filterCreator", fields: [createdBy], references: [id])
 
-  @@map("save_filters")
+  @@map("saved_filters")
 }
