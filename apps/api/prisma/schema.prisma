@@ -245,9 +245,9 @@ model Label {
  * |========================================================================================================================|
  */
 
-enum TASKPriority {
+enum TaskPriority {
   URGENT
-  HIGHT
+  HIGH
   MEDIUM
   LOW
   NONE
@@ -257,7 +257,7 @@ model Task {
   id             String       @id @default(cuid())
   title          String       @db.VarChar(255)
   description    Json?
-  priority       TASKPriority
+  priority       TaskPriority
   taskNumber     Int          @map("task_number")
   dueDate        DateTime?    @map("due_date")
   estimatedHours Float?       @map("estimated_hours")
@@ -278,7 +278,7 @@ model Task {
   status     Status  @relation(fields: [statusId], references: [id])
   assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
   reporter   User    @relation("TaskReporter", fields: [reporterId], references: [id])
-  ParentTask Task?   @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  parentTask Task?   @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
 
   // Relations
   tasks       Task[]       @relation("TaskHierarchy")
@@ -367,7 +367,7 @@ enum ActivityAction {
 
   // writes
   COMMENTED
-  ATTACHEMNT_ADDED
+  ATTACHMENT_ADDED
 
   // misc
   MOVED
@@ -375,11 +375,11 @@ enum ActivityAction {
 }
 
 model Activity {
-  id         String         @id @default(cuid())
-  action     ActivityAction
-  oldValue   String?        @map("old_value")
-  newValue   String?        @map("new_value")
-  created_at DateTime       @default(now())
+  id        String         @id @default(cuid())
+  action    ActivityAction
+  oldValue  String?        @map("old_value")
+  newValue  String?        @map("new_value")
+  createdAt DateTime       @default(now()) @map("created_at")
 
   // Foreign Keys
   taskId  String @map("task_id")
@@ -390,7 +390,7 @@ model Activity {
   actor User @relation(fields: [actorId], references: [id])
 
   // constraints
-  @@index([taskId, created_at])
+  @@index([taskId, createdAt])
   @@map("activities")
 }
 
@@ -404,38 +404,40 @@ model Activity {
  */
 
 // TODO: Complete this type later
+// FUTURE Actions after work
+// commented ones
 enum NotificationType {
   // Task Action
-  TASK_ASSIGNED
-  TASK_UNASSIGNED
-  TASK_CREATED
-  TASK_UPDATED
-  TASK_DELTED
-  TASK_DUE_SOON
-  TASK_OVERDUE
+  // TASK_ASSIGNED
+  // TASK_UNASSIGNED
+  // TASK_CREATED
+  // TASK_UPDATED
+  // TASK_DELETED
+  // TASK_DUE_SOON
+  // TASK_OVERDUE
 
   // Comment Action
   COMMENT_ADDED
-  MENTIONED_IN_COMMENT
-  REPLY_TO_COMMENT
+  // MENTIONED_IN_COMMENT
+  // REPLY_TO_COMMENT
 
   // Project Action
   PROJECT_CREATED
-  PROJECT_UPDATED
+  // PROJECT_UPDATED
   MEMBER_ADDED
   MEMBER_REMOVED
-  ROLE_CHANGED
+  // ROLE_CHANGED
 
   // Attachment Action
-  ATTACHMENT_ADDED
-  ATTACHMENT_REMOVED
+  // ATTACHMENT_ADDED
+  // ATTACHMENT_REMOVED
 
   // Invitation
-  INVITATION_RECIEVED
+  INVITATION_RECEIVED
   INVITATION_ACCEPTED
 
   // User Action
-  PASSWORD_CHANGED
+  // PASSWORD_CHANGED
 
   // Misc
   OTHER
@@ -446,9 +448,9 @@ model Notification {
   type      NotificationType
   title     String           @db.VarChar(50)
   message   String
-  link      String
+  link      String?
   isRead    Boolean          @default(false) @map("is_read")
-  createdAt DateTime         @map("created_at")
+  createdAt DateTime         @default(now()) @map("created_at")
 
   // Foreign Keys
   userId String @map("user_id")
@@ -512,7 +514,7 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
-  @@map("refresh_Token")
+  @@map("refresh_token")
 }
 
 /**
@@ -535,8 +537,8 @@ model SavedFilter {
   createdBy String @map("created_by")
 
   // Relationships
-  proejct Project @relation(fields: [projectId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
   creator User    @relation(fields: [createdBy], references: [id])
 
-  @@map("save_filter")
+  @@map("save_filters")
 }
