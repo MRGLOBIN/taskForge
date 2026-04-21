@@ -1,0 +1,218 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             User Table                                                                 |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique @db.VarChar(255)
+  firstName       String   @map("first_name") @db.VarChar(100)
+  lastName        String   @map("last_name") @db.VarChar(100)
+  passwordHash    String?  @map("password_hash")
+  avatarUrl       String?  @map("avatar_url")
+  isEmailVerified Boolean  @default(false) @map("is_email_verified")
+  googleId        String?  @unique @map("google_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Realtionships
+  orgMembers  OrgMember[]
+  projects    Project[]
+  invitations Invitation[]
+
+  @@map("users")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Organisation Table                                                         |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model Organisation {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(50) // For organisation url
+  description String?
+  avatarUrl   String?  @map("avatar_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Realtionships
+  orgMembers  OrgMember[]
+  projects    Project[]
+  invitations Invitation[]
+
+  @@map("organisations")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             OrgMember Table                                                            |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model OrgMember {
+  id       String   @id @default(cuid())
+  role     Role     @default(OWNER)
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  // Foreign Keys
+  userId         String @map("user_id")
+  organisationId String @map("organisation_id")
+
+  // Realtionships
+  user         User         @relation(fields: [userId], references: [id])
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+
+  // constraints
+  @@unique([userId, organisationId])
+  // Indeicies
+  @@index([userId])
+  @@index([organisationId])
+  @@map("org_members")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Project Table                                                              |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model Project {
+  id          String   @id @default(cuid())
+  taskCounter Int      @default(autoincrement()) @map("task_counter")
+  name        String   @db.VarChar(255)
+  key         String   @db.VarChar(5)
+  description String?
+  icon        String?
+  isArchived  Boolean  @default(false) @map("is_archived")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("update_at")
+
+  // Foreign Keys
+  organisationId String  @map("organisation_id")
+  leadId         String? @map("lead_id")
+
+  // Relationships
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+  lead         User?        @relation(fields: [leadId], references: [id])
+  statuses     Status[]
+  labels       Label[]
+
+  // COnstraints
+  @@unique([organisationId, key])
+  @@map("projects")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Invitation Table                                                           |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model Invitation {
+  role       Role // Role will be defined invitee
+  token      String    @unique
+  createdAt  DateTime  @default(now()) @map("created_at")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+
+  //Foreign Keys
+  organisationId String @map("organisation_id")
+  invitedBy      String @map("invited_by")
+
+  // Relationships
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+  invitee      User         @relation(fields: [invitedBy], references: [id])
+
+  @@map("invitations")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Status Table                                                           |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model Status ?{
+id    String @id @default(cuid())
+name  String @db.VarChar(255)
+color String @db.VarChar(20)
+order Int // For  | symbolordering status: PropertyName as string
+
+// Foreign Keys
+projectId String @map("project_id")
+
+// Relationships
+project Project @relation(fields: [projectId], references: [id])
+
+// constraints
+@@unique([projectId, name])
+@@map("statuses")
+}
+
+/**
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ * |                                             Label Table                                                                |
+ * |                                                                                                                        |
+ * |========================================================================================================================|
+ * |========================================================================================================================|
+ */
+
+model Label {
+  id    String @id @default(cuid())
+  name  String @db.VarChar(255)
+  color String @db.VarChar(20)
+
+  // Foreign key
+  projectId String @map("project_id")
+
+  // Relationships
+  project Project @relation(fields: [projectId], references: [id])
+
+  // constraints
+  @@unique([projectId, name])
+  @@map("labels")
+}
