@@ -6,12 +6,17 @@ import {
   mapRegisterDtoToCreateUser,
   mapToSafeUser,
 } from "../core/mappers/user.mapper";
-import type { UserResponse } from "../core/types/user.type";
-import { Prisma } from "../../../generated/prisma/client";
+import type { Tokens, UserResponse } from "../core/types/user.type";
+import { Prisma, PrismaClient } from "../../../generated/prisma/client";
 import type { JwtPayload } from "../../../lib/jwt/jwt.types";
 import jwt from "../../../lib/jwt/jwt";
 import { decodeJwt } from "jose";
 import { createHash } from "crypto";
+import type { LoginUserDto } from "../dtos/loginUser.dto";
+import { OAuth2Client } from "google-auth-library";
+
+// HACK: move this to lib or global file
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const registerUser = async (user: RegisterUserDto): Promise<UserResponse> => {
   const passwordHash = await password.hash(user.password);
@@ -24,7 +29,7 @@ const registerUser = async (user: RegisterUserDto): Promise<UserResponse> => {
 
       const tokens = await generateUserTokens({ userId: newUser.id });
 
-      await storeRefreshToken(tx, newUser.id, tokens.refreshToken);
+      await storeRefreshToken(newUser.id, tokens.refreshToken, tx);
 
       return { user: mapToSafeUser(newUser), tokens };
     });
@@ -44,23 +49,116 @@ const registerUser = async (user: RegisterUserDto): Promise<UserResponse> => {
   }
 };
 
-const generateUserTokens = async (payload: JwtPayload) => {
+const loginUser = async (loginUser: LoginUserDto): Promise<UserResponse> => {
+  const user = await prisma.user.findUnique({
+    where: { email: loginUser.email },
+  });
+
+  if (!user || !user.passwordHash) {
+    throw new AppError("Invalid email or password", 401);
+  }
+
+  const isPasswrodValid = password.verify(
+    loginUser.password,
+    user.passwordHash,
+  );
+  if (!isPasswrodValid) {
+    throw new AppError("Invalid email or password", 401);
+  }
+
+  const tokens = await generateUserTokens({ userId: user.id });
+
+  await storeRefreshToken(user.id, tokens.refreshToken);
+
+  return { user, tokens };
+};
+
+const refresh = async (oldRefreshToken: string): Promise<Tokens> => {
+  const payload = await jwt.verifyRefreshToken(oldRefreshToken);
+
+  // NOTE: db has hashed token, first create hash then check in db
+  const oldTokenHash = createHash("sha256")
+    .update(oldRefreshToken)
+    .digest("hex");
+
+  const dbToken = await prisma.refreshToken.findFirst({
+    where: { tokenHash: oldTokenHash },
+  });
+
+  if (!dbToken) {
+    throw new AppError("Invalid or revoked refresh token", 403);
+  }
+
+  const newTokens = await generateUserTokens({
+    userId: payload.userId,
+  });
+
+  await updateStoredRefreshToken(dbToken.id, newTokens.refreshToken);
+
+  return newTokens;
+};
+
+const logout = async (refreshToken: string): Promise<{ success: boolean }> => {
+  const tokenHash = generateTokenHash(refreshToken);
+  await prisma.refreshToken.deleteMany({ where: { tokenHash } });
+  return { success: true };
+};
+
+const googleLogin = async (idToken: string): Promise<Tokens> => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email || !payload.sub) {
+    throw new AppError("Invalid Google token", 400);
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.upsert({
+      where: { email: payload.email },
+      update: {
+        googleId: payload.sub,
+        isEmailVerified: payload.email_verified ?? false,
+      },
+      create: {
+        email: payload.email!,
+        firstName: payload.given_name || "",
+        lastName: payload.family_name || "",
+        googleId: payload.sub,
+        avatarUrl: payload.picture,
+        isEmailVerified: payload.email_verified ?? false,
+      },
+    });
+
+    const tokens = await generateUserTokens({ userId: user.id });
+    await storeRefreshToken(user.id, tokens.refreshToken, tx);
+
+    return tokens;
+  });
+  return result;
+};
+
+const generateUserTokens = async (payload: JwtPayload): Promise<Tokens> => {
   const accessToken = await jwt.signAccessToken(payload);
   const refreshToken = await jwt.signRefreshToken(payload);
   return { accessToken, refreshToken };
 };
 
+const generateTokenHash = (refreshToken: string): string => {
+  return createHash("sha256").update(refreshToken).digest("hex");
+};
+
 const storeRefreshToken = async (
-  tx: Prisma.TransactionClient,
   userId: string,
   refreshToken: string,
+  db: Prisma.TransactionClient | PrismaClient = prisma,
 ) => {
-  const refreshTokenHash = createHash("sha256")
-    .update(refreshToken)
-    .digest("hex");
+  const refreshTokenHash = generateTokenHash(refreshToken);
   const decodedRefreshToken = decodeJwt(refreshToken);
 
-  return tx.refreshToken.create({
+  return db.refreshToken.create({
     data: {
       tokenHash: refreshTokenHash,
       userId,
@@ -69,8 +167,26 @@ const storeRefreshToken = async (
   });
 };
 
+const updateStoredRefreshToken = (
+  userId: string,
+  refreshToken: string,
+  db: Prisma.TransactionClient | PrismaClient = prisma,
+) => {
+  const refreshTokenHash = generateTokenHash(refreshToken);
+  const decodedRefreshToken = decodeJwt(refreshToken);
+
+  return db.refreshToken.update({
+    where: { id: userId },
+    data: {
+      tokenHash: refreshTokenHash,
+      expiresAt: new Date(decodedRefreshToken.exp! * 1000),
+    },
+  });
+};
+
 const authService = {
   registerUser,
+  loginUser,
 };
 
 export default authService;
