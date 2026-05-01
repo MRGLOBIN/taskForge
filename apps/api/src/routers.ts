@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "./lib/db/prismaClient";
-import authRouter from "./domains/auth/controllers/auth.controller";
+import authRouter from "./domains/auth/auth.routes";
 
 export default function routerSetup() {
   const v1Router = Router();
