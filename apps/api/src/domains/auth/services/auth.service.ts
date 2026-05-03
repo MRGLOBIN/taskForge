@@ -11,9 +11,12 @@ import { Prisma, PrismaClient } from "../../../generated/prisma/client";
 import type { JwtPayload } from "../../../lib/jwt/jwt.types";
 import jwt from "../../../lib/jwt/jwt";
 import { decodeJwt } from "jose";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import type { LoginUserDto } from "../dtos/loginUser.dto";
 import { OAuth2Client } from "google-auth-library";
+import { success } from "zod";
+
+type Success = { success: boolean };
 
 // HACK: move this to lib or global file
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -98,7 +101,7 @@ const refresh = async (oldRefreshToken: string): Promise<Tokens> => {
   return newTokens;
 };
 
-const logout = async (refreshToken: string): Promise<{ success: boolean }> => {
+const logout = async (refreshToken: string): Promise<Success> => {
   const tokenHash = generateTokenHash(refreshToken);
   await prisma.refreshToken.deleteMany({ where: { tokenHash } });
   return { success: true };
@@ -138,6 +141,85 @@ const googleLogin = async (idToken: string): Promise<Tokens> => {
     return tokens;
   });
   return result;
+};
+
+const generateEmailVerificationToken = async (
+  userId: string,
+): Promise<string> => {
+  const rawToken = randomBytes(32).toString();
+
+  const tokenHash = generateTokenHash(rawToken);
+
+  await prisma.emailVerificationToken.create({
+    data: {
+      tokenHash,
+      userId,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60), // 1 hour
+    },
+  });
+
+  return rawToken;
+};
+
+const verifyEmail = async (token: string): Promise<Success> => {
+  const tokenHash = generateTokenHash(token);
+
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!record) {
+    throw new AppError("Invalid Token", 400);
+  }
+
+  if (record.usedAt) {
+    throw new AppError("Token already used", 400);
+  }
+
+  if (record.expiresAt < new Date()) {
+    throw new AppError("Token expired", 400);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: record.userId },
+      data: {
+        isEmailVerified: true,
+      },
+    });
+
+    await tx.emailVerificationToken.update({
+      where: { id: record.id },
+      data: {
+        usedAt: new Date(),
+      },
+    });
+  });
+
+  return { success: true };
+};
+
+const resendVerificationEmail = async (email: string): Promise<Success> => {
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  if (user.isEmailVerified) {
+    throw new AppError("Email already verified", 400);
+  }
+
+  // Remove the old token if exist
+  await prisma.emailVerificationToken.deleteMany({
+    where: { userId: user.id },
+  });
+
+  const rawToken = generateEmailVerificationToken(user.id);
+
+  // TODO: Send email again
+
+  return { success: true };
 };
 
 const generateUserTokens = async (payload: JwtPayload): Promise<Tokens> => {
