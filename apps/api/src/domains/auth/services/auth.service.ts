@@ -14,7 +14,6 @@ import { decodeJwt } from "jose";
 import { createHash, randomBytes } from "crypto";
 import type { LoginUserDto } from "../dtos/loginUser.dto";
 import { OAuth2Client } from "google-auth-library";
-import { success } from "zod";
 
 type Success = { success: boolean };
 
@@ -101,7 +100,7 @@ const refresh = async (oldRefreshToken: string): Promise<Tokens> => {
   return newTokens;
 };
 
-const logout = async (refreshToken: string): Promise<Success> => {
+export const logout = async (refreshToken: string): Promise<Success> => {
   const tokenHash = generateTokenHash(refreshToken);
   await prisma.refreshToken.deleteMany({ where: { tokenHash } });
   return { success: true };
@@ -269,6 +268,10 @@ const updateStoredRefreshToken = (
 const authService = {
   registerUser,
   loginUser,
+  logout,
+  generateEmailVerificationToken,
+  resendVerificationEmail,
+  updateStoredRefreshToken,
 };
 
 export default authService;
